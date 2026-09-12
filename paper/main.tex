@@ -1,0 +1,165 @@
+% IEEE conference manuscript skeleton.
+%
+% Numbers come from \input{results_macros} and \input{parameters}, both
+% generated from the code by src/scripts/08_paper_numbers.py and
+% 07_parameter_table.py. Do not type a numeric result directly into this
+% file -- if it is worth quoting, it is worth generating.
+%
+% Unfilled results render as bold ?? in the PDF. Search the compiled output
+% for "??" before submitting.
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+
+\input{results_macros}
+
+\begin{document}
+
+\title{Wind-Driven Biomechanics of Herbaceous Row Crops\\
+for Agricultural Robot Simulation}
+
+\author{\IEEEauthorblockN{Sudharshan S}
+\IEEEauthorblockA{Karunya Institute of Technology and Sciences\\
+Coimbatore, India\\
+sudharshans@karunya.edu.in}
+% ADVISOR: confirm co-authorship and ordering before submission.
+}
+
+\maketitle
+
+\begin{abstract}
+% Write last. Structure: agricultural robots are trained against rigid plants;
+% wind-driven deformation is the load case that matters for perception and is
+% absent from existing deformable-plant simulators; we model slender
+% herbaceous stems as XPBD particle chains with bending compliance derived
+% from a tapered EI profile; validated against a closed-form cantilever
+% solution, an independent implementation, and measured deflection of a real
+% plant.
+%
+% Do NOT claim GPU speed-up in the abstract unless \GPUAvailable is true.
+\end{abstract}
+
+\begin{IEEEkeywords}
+agricultural robotics, simulation, deformable objects, position-based
+dynamics, plant biomechanics
+\end{IEEEkeywords}
+
+\section{Introduction}
+% Motivation: perception and manipulation both degrade when the simulated
+% plant cannot move. Wind is the dominant everyday load on a field crop and
+% continuously changes the plant's silhouette.
+%
+% State contributions precisely. Suggested, and defensible given the prior
+% work in Section II:
+%   1) a wind-loaded biomechanical model of slender herbaceous row crops,
+%      with bending compliance derived from a tapered EI \propto r^4 profile
+%      rather than tuned;
+%   2) a solver-design study showing that chain-sequential parallelisation
+%      is required for stem-like topologies, with the colour-parallel
+%      alternative measurably \SI{7}{\times} too compliant at equal cost;
+%   3) validation against a closed-form cantilever solution, an independent
+%      second implementation, and a real plant.
+
+\section{Related Work}
+% See Research/RELATED_WORK.md for the verified summaries these paragraphs
+% must be written from.
+%
+% MANDATORY: OrchardBench~\cite{munn2026orchardbench} and Gazebo
+% Plants~\cite{deng2024gazeboplants} must both be cited and explicitly
+% differentiated. They are the closest prior art and a reviewer will know
+% them. Do not write "existing simulators treat plants as rigid" without
+% immediately qualifying it -- cite Agri-Sim~\cite{agrisim2026} for the rigid
+% -body claim, which is accurate for that platform.
+%
+% The honest separation: those works address woody trees and manipulator
+% contact; this addresses slender herbaceous stems under aerodynamic load.
+
+\section{Method}
+
+\subsection{Plant Model}
+% Particle chain; axial and bending constraints; leaves as compliant blades.
+% The soil clamp: a pinned root fixes position but not tangent, so a buried
+% anchor particle plus a root-hinged bending constraint is required.
+
+The stem is discretised into \StemNodes{} particles over
+\StemLength{}\,m, tapering from \RadiusBase{}\,mm radius at the soil to
+\RadiusTip{}\,mm at the tip. Bending compliance follows from beam theory,
+\begin{equation}
+\alpha_\text{bend} = \frac{L^3}{4EI}, \qquad I = \frac{\pi r^4}{4},
+\end{equation}
+so that flexural rigidity falls with height as $r^4$; the base of the default
+stem is \RigidityRatio{}$\times$ stiffer than the tip without any
+height-dependent stiffness rule being imposed.
+
+\subsection{Aerodynamic Loading}
+% Drag on the relative velocity, and why a constant wind acceleration cannot
+% reach equilibrium.
+\begin{equation}
+\mathbf{F} = \tfrac{1}{2}\rho C_d A \lVert \mathbf{u}-\mathbf{v} \rVert
+             (\mathbf{u}-\mathbf{v})
+\end{equation}
+
+\subsection{Solver}
+% XPBD; why compliance rather than iteration-count stiffness; the chain vs
+% colour parallelisation result; substeps beat iterations.
+
+\input{parameters}
+
+\section{Validation}
+
+\subsection{Closed-Form Beam Theory}
+% Mesh refinement table: 9/17/33 nodes, converged, vs qL^4/(8EI).
+% State the residual ~8% bias and its cause (elastic clamp, lumped mass).
+
+\subsection{Independent Implementation}
+% Warp kernels vs NumPy reference agree to ~5e-5 m over 300 frames.
+
+\subsection{Measured Plant Deflection}
+% FILL FROM results/field_validation.md once measurements exist.
+% If \FieldValidationDone is false this section cannot be written, and the
+% paper should not claim real-world validation.
+% n = \FieldN{}, species \FieldSpecies{}, mean absolute error \FieldMAE{} deg.
+%
+% State the limitations explicitly and in the body text, not only in a
+% limitations section: preliminary, small n, single species, and -- if the
+% fan was uncalibrated -- that the airspeed scale was fitted rather than
+% measured.
+
+\section{Results}
+
+\subsection{Wind Response}
+The default plant reaches a mean tip deflection of
+\TipDeflectionMean{}\,m, peaking at \TipDeflectionPeak{}\,m
+(\TipDeflectionPercent{}\,\% of stem length) under a \WindSpeed{}\,m/s wind,
+while the stem tip remains at \TipHeight{}\,m.
+
+\subsection{Throughput}
+% ONLY write this subsection if \GPUAvailable is true. Otherwise the honest
+% move is to report CPU scaling and state that GPU evaluation is future work
+% -- a GPU claim without GPU numbers, in a field where
+% OrchardBench~\cite{munn2026orchardbench} reports measured GPU results, will
+% not survive review.
+
+\section{Limitations}
+% Say these plainly; a reviewer finding them first is much worse.
+% - material constants assumed from published ranges, not measured per plant
+% - drag model, not a flow solve: no wake, no plant-to-plant sheltering
+% - leaves are 1-D chains: no twist or furling
+% - purely elastic: no plastic deformation or stem breakage
+% - validation scope: preliminary, small n, single species
+
+\section{Conclusion}
+
+\section*{Acknowledgment}
+% Advisor, institution, compute.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}

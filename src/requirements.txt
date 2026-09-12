@@ -1,0 +1,14 @@
+# Core simulation. Warp ships CUDA kernels for the GPU path and falls back to
+# a compiled CPU backend when no driver is present, so the project runs either
+# way -- only the benchmark numbers depend on the GPU being live.
+warp-lang>=1.4
+numpy>=1.23
+matplotlib>=3.6
+
+# Testing
+pytest>=7.0
+
+# NOT installed by pip: NVIDIA Isaac Sim.
+# Only src/scripts/05_isaac_sim.py needs it, and it must run under Isaac Sim's
+# own interpreter. Install it through the Omniverse Launcher:
+#   developer.nvidia.com/omniverse  ->  Exchange  ->  Isaac Sim

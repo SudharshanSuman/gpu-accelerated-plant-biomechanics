@@ -1,0 +1,22 @@
+Canopy statistics — 60 plants, 200 frames
+
+Scene            : 60 plants | 1500 particles | 1380 stretch + 1380 bend constraints | colours: 3 stretch, 5 bend
+Device           : cpu
+
+Tip deflection across the population (m)
+  population mean          : 0.1433
+  population std           : 0.0162
+  quietest plant           : 0.1138
+  most exposed plant       : 0.1760
+  spread (max/min)         : 1.55x
+
+Whole-canopy sway over time (m)
+  time-mean                : 0.1433
+  time-min                 : 0.1262
+  time-max                 : 0.1634
+
+Plants do not move in lockstep: the wind field varies with height and with
+position along the row, and stems differ in size by +/-12%.
+That variation is the point. A perception model trained on a canopy where
+every plant bends identically learns the wrong prior about what a plant
+looks like when a robot approaches it.

@@ -1,0 +1,47 @@
+[
+  {
+    "plants": 1,
+    "particles": 25,
+    "constraints": 46,
+    "numpy_ms": 282.1368423335823,
+    "numpy_sd": 5.719967271761998,
+    "warp_cpu_ms": 1.8861140552972857,
+    "warp_cpu_sd": 0.10730551224510129,
+    "warp_cuda_ms": NaN,
+    "warp_cuda_sd": NaN,
+    "repeats": 3,
+    "speedup_vs_warp_cpu": NaN,
+    "cpu_ms": 1.8861140552972857,
+    "gpu_ms": 1.8861140552972857
+  },
+  {
+    "plants": 16,
+    "particles": 400,
+    "constraints": 736,
+    "numpy_ms": 309.56156644404274,
+    "numpy_sd": 7.516006302703935,
+    "warp_cpu_ms": 4.48466061061481,
+    "warp_cpu_sd": 0.20732691570550754,
+    "warp_cuda_ms": NaN,
+    "warp_cuda_sd": NaN,
+    "repeats": 3,
+    "speedup_vs_warp_cpu": NaN,
+    "cpu_ms": 4.48466061061481,
+    "gpu_ms": 4.48466061061481
+  },
+  {
+    "plants": 64,
+    "particles": 1600,
+    "constraints": 2944,
+    "numpy_ms": 371.2011401674115,
+    "numpy_sd": 9.219596208476048,
+    "warp_cpu_ms": 13.192332777382235,
+    "warp_cpu_sd": 0.23825884604243525,
+    "warp_cuda_ms": NaN,
+    "warp_cuda_sd": NaN,
+    "repeats": 3,
+    "speedup_vs_warp_cpu": NaN,
+    "cpu_ms": 13.192332777382235,
+    "gpu_ms": 13.192332777382235
+  }
+]

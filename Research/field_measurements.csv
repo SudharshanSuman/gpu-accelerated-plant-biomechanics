@@ -1,0 +1,23 @@
+# Real plant measurements. THIS FILE SHIPS EMPTY ON PURPOSE.
+#
+# Nothing in this project will invent values for it. Fill in one row per
+# photograph, then run:   python3 src/scripts/06_field_validation.py
+#
+# Columns
+#   trial             any label, e.g. t1, t2, t3 (repeat each condition 3x)
+#   species           what the plant actually is. If you do not know, write
+#                     "unidentified herbaceous" -- do NOT write "sunflower"
+#                     unless it is one.
+#   stem_height_m     soil surface to stem tip, metres
+#   base_diameter_mm  calliper/ruler diameter at the soil, millimetres
+#   tip_diameter_mm   diameter near the tip, millimetres
+#   condition         rest, fan1, fan2, fan3 ... ("rest" = fan off, needed as
+#                     the zero-deflection reference)
+#   wind_speed_ms     measured airspeed if you have an anemometer. LEAVE BLANK
+#                     if you do not -- the script then runs trend mode and
+#                     labels the result as calibrated rather than validated.
+#   tip_angle_deg     angle of the base->tip line from vertical, degrees.
+#                     Use src/scripts/photo_angle.py to get this from a photo.
+#   notes             fan distance, anything unusual, honest caveats
+#
+trial,species,stem_height_m,base_diameter_mm,tip_diameter_mm,condition,wind_speed_ms,tip_angle_deg,notes
