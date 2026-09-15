@@ -1,4 +1,4 @@
-% IEEE conference manuscript skeleton.
+% IEEE conference manuscript.
 %
 % Numbers come from \input{results_macros} and \input{parameters}, both
 % generated from the code by src/scripts/08_paper_numbers.py and
@@ -34,15 +34,39 @@ sudharshans@karunya.edu.in}
 \maketitle
 
 \begin{abstract}
-% Write last. Structure: agricultural robots are trained against rigid plants;
-% wind-driven deformation is the load case that matters for perception and is
-% absent from existing deformable-plant simulators; we model slender
-% herbaceous stems as XPBD particle chains with bending compliance derived
-% from a tapered EI profile; validated against a closed-form cantilever
-% solution, an independent implementation, and measured deflection of a real
-% plant.
-%
-% Do NOT claim GPU speed-up in the abstract unless \GPUAvailable is true.
+Agricultural robots are increasingly trained and evaluated in simulation, but
+the plants they are trained against rarely move. Recent work has added
+deformable plants to robotics simulators for the contact case---a manipulator
+pushing a branch---while leaving out the load that acts on a field crop
+continuously: wind. A stem bending in a gust changes its silhouette from the
+robot's camera several times a second, which is precisely the variation a
+perception model trained on static geometry never sees.
+
+We present a biomechanical model of slender herbaceous row crops under
+aerodynamic load. Stems are discretised as particle chains solved with
+extended position-based dynamics, with bending compliance derived from a
+tapered flexural rigidity profile rather than tuned: because the second moment
+of area scales as $r^4$, a stem tapering from \RadiusBase{} to \RadiusTip{}\,mm
+is \RigidityRatio{}$\times$ stiffer at the soil than at the tip without any
+height-dependent stiffness rule being imposed. Wind enters as drag on the
+velocity of the air relative to the moving plant, which is what allows the
+deflection to reach equilibrium; we show that the constant-acceleration wind
+model used in simpler formulations cannot.
+
+We report three findings of independent interest. First, the soil boundary
+condition is the difference between a plant and a falling pole: pinning the
+root particle fixes position but not tangent, and without a second fixed
+reference the stem topples regardless of its stiffness. Second, chain
+topologies require sequential rather than colour-parallel constraint solving;
+at equal computational cost the colour-parallel alternative simulates a stem
+$4.4\times$ more compliant than the material it was given. Third, and
+negatively, peak impact quantities during manipulator contact do not converge
+under temporal refinement in a model without strain-rate damping, and we
+therefore decline to report a maximum safe approach speed.
+
+The model is validated against a closed-form cantilever solution and against
+an independent second implementation agreeing to
+$5\times10^{-5}$\,m. Validation against measured plants remains outstanding.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -51,113 +75,540 @@ dynamics, plant biomechanics
 \end{IEEEkeywords}
 
 \section{Introduction}
-% Motivation: perception and manipulation both degrade when the simulated
-% plant cannot move. Wind is the dominant everyday load on a field crop and
-% continuously changes the plant's silhouette.
-%
-% State contributions precisely. Suggested, and defensible given the prior
-% work in Section II:
-%   1) a wind-loaded biomechanical model of slender herbaceous row crops,
-%      with bending compliance derived from a tapered EI \propto r^4 profile
-%      rather than tuned;
-%   2) a solver-design study showing that chain-sequential parallelisation
-%      is required for stem-like topologies, with the colour-parallel
-%      alternative measurably \SI{7}{\times} too compliant at equal cost;
-%   3) validation against a closed-form cantilever solution, an independent
-%      second implementation, and a real plant.
+
+A robot working a row crop spends its time among objects that bend. Stems sway
+in wind, leaves flutter and fold, and a gripper that brushes a plant displaces
+it rather than colliding with it. Simulators used to develop these robots have
+historically represented plants as rigid obstacles, which is an adequate model
+of a wall and a poor model of a canola stem.
+
+The consequences fall on both halves of the autonomy stack. For perception, a
+rigid plant presents the same silhouette in every frame; a real one is in
+continuous motion, and its projected outline from a camera mounted on a moving
+vehicle changes on the timescale of a gust. A detector trained exclusively on
+static geometry acquires a prior about plant appearance that does not hold in
+a field. For manipulation, a rigid-body simulator can report that the
+end-effector intersected a plant, but cannot report how hard the plant pushed
+back, because a rigid plant has no such notion. The question a harvesting
+planner actually needs answered---whether an approach would have damaged the
+crop---is unanswerable in a rigid model by construction.
+
+Recent work has begun to close this gap, and we are careful in
+Section~\ref{sec:related} not to overstate what remains open. Deformable
+plant--robot interaction in a robotics simulator has been demonstrated with
+Cosserat rods~\cite{deng2024gazeboplants}, and GPU-parallel orchard simulation
+with beam-theory branch stiffness and literature-grounded breakage thresholds
+has been benchmarked~\cite{munn2026orchardbench}. What both address is
+\emph{contact}: a manipulator interacting with a woody structure. Neither
+treats aerodynamic loading, and both target trees rather than the slender
+herbaceous stems characteristic of row crops, where the bending response to
+wind is large, continuous, and visually dominant.
+
+This paper addresses that case. Our contributions are:
+
+\begin{enumerate}
+\item A wind-loaded biomechanical model of slender herbaceous row crops in
+which bending compliance is derived from a tapered $EI \propto r^4$ profile
+rather than tuned, so that the widely-desired property of rigidity decreasing
+with height emerges from the geometry instead of being imposed.
+
+\item An aerodynamic formulation in which wind acts as drag on the relative
+velocity of air and plant. We show this is not a refinement but a requirement:
+a constant wind acceleration has no feedback as the plant yields and drives
+the stem flat for any choice of damping.
+
+\item A solver-design study establishing that stem-like chain topologies
+require sequential constraint propagation. The colour-parallel scheme
+conventionally used for GPU constraint solving leaves a 17-node stem
+$4.4\times$ too compliant at the same computational budget, a discrepancy that
+presents as a modelling failure while being a convergence failure.
+
+\item Validation against a closed-form cantilever solution and an independent
+reimplementation, together with an explicit negative result: peak impact
+quantities do not converge under refinement in the absence of strain-rate
+damping.
+\end{enumerate}
 
 \section{Related Work}
-% See Research/RELATED_WORK.md for the verified summaries these paragraphs
-% must be written from.
-%
-% MANDATORY: OrchardBench~\cite{munn2026orchardbench} and Gazebo
-% Plants~\cite{deng2024gazeboplants} must both be cited and explicitly
-% differentiated. They are the closest prior art and a reviewer will know
-% them. Do not write "existing simulators treat plants as rigid" without
-% immediately qualifying it -- cite Agri-Sim~\cite{agrisim2026} for the rigid
-% -body claim, which is accurate for that platform.
-%
-% The honest separation: those works address woody trees and manipulator
-% contact; this addresses slender herbaceous stems under aerodynamic load.
+\label{sec:related}
+
+\subsection{Deformable plants in robotics simulators}
+
+Deng~et~al.~\cite{deng2024gazeboplants} model plants as Cosserat rods in a
+Gazebo plugin and demonstrate robotic fruit picking against real harvesting
+experiments. This work established that plant--robot interaction with
+deformable plants is tractable inside a standard robotics simulator, and any
+claim that simulators universally treat plants as rigid must be qualified
+against it.
+
+Munn~\cite{munn2026orchardbench} presents OrchardBench, a GPU-parallel apple
+orchard benchmark in which branches are compliant torsional spring-dampers
+with stiffness taken from Euler--Bernoulli beam theory, branches break at a
+wood modulus of rupture, and fruit detaches at literature-grounded pull
+forces. It is the closest prior art to the present work, overlapping it on
+GPU parallelism, beam-theory stiffness, robot contact, and the practice of
+grounding every physical parameter in a published source.
+
+We therefore state our separation from these works precisely rather than
+broadly. Both address woody structures under manipulator contact. This work
+addresses slender herbaceous stems under \emph{aerodynamic} load, a regime in
+which the deflection is a large fraction of the plant's height, occurs
+continuously without any robot present, and is governed by a drag law rather
+than by contact. Neither of the above models wind. The rigid-plant
+characterisation remains accurate for platforms such as
+Agri-Sim~\cite{agrisim2026}, a Unity--ROS2 greenhouse environment whose
+dynamics are rigid-body and which names crop deformability as an open
+difficulty; we cite it for that claim specifically.
+
+Complementary rather than competing, CropCraft~\cite{cropcraft2025} generates
+agricultural worlds procedurally, addressing geometry rather than physics.
+
+\subsection{Position-based dynamics}
+
+Our solver is extended position-based dynamics
+(XPBD)~\cite{macklin2016xpbd}, which augments position-based
+dynamics~\cite{muller2007pbd} with a compliance term so that stiffness is a
+material property rather than a function of iteration count. The distinction
+matters here: a plain-PBD stem silently changes material whenever solver
+settings are tuned, which makes a claim such as ``this stem has $E=1$\,GPa''
+unverifiable. We also reproduce, independently and on a different problem, the
+result of Macklin~et~al.~\cite{macklin2019smallsteps} that substepping
+converges more cheaply than iterating; our measurement appears in
+Section~\ref{sec:convergence}. The implementation uses NVIDIA
+Warp~\cite{warp2022}.
 
 \section{Method}
 
-\subsection{Plant Model}
-% Particle chain; axial and bending constraints; leaves as compliant blades.
-% The soil clamp: a pinned root fixes position but not tangent, so a buried
-% anchor particle plus a root-hinged bending constraint is required.
+\subsection{Plant model}
 
-The stem is discretised into \StemNodes{} particles over
-\StemLength{}\,m, tapering from \RadiusBase{}\,mm radius at the soil to
-\RadiusTip{}\,mm at the tip. Bending compliance follows from beam theory,
+A plant is a set of particles connected by constraints. The stem is a chain of
+\StemNodes{} particles spanning \StemLength{}\,m. Each adjacent pair carries an
+axial constraint maintaining segment length; each interior particle carries a
+bending constraint resisting curvature. Leaves are short chains branching from
+stem particles, with their own blade bending and a petiole constraint holding
+the attachment angle---without the latter, a blade is a free hinge and rotates
+about its stem particle indefinitely.
+
+Compliances are derived, not tuned. For a segment of length $L$ and radius
+$r$, with Young's modulus $E$, cross-sectional area $A = \pi r^2$ and second
+moment of area $I = \pi r^4 / 4$, the axial compliance is $L/(EA)$. The
+bending compliance follows from the discrete hinge energy. Our bending
+constraint measures the offset of a hinge particle from the midpoint of its
+neighbours,
 \begin{equation}
-\alpha_\text{bend} = \frac{L^3}{4EI}, \qquad I = \frac{\pi r^4}{4},
+C = \left\lVert \mathbf{x}_b - \tfrac{1}{2}(\mathbf{x}_a + \mathbf{x}_c)
+    \right\rVert - C_0 ,
+\label{eq:bend}
 \end{equation}
-so that flexural rigidity falls with height as $r^4$; the base of the default
-stem is \RigidityRatio{}$\times$ stiffer than the tip without any
-height-dependent stiffness rule being imposed.
-
-\subsection{Aerodynamic Loading}
-% Drag on the relative velocity, and why a constant wind acceleration cannot
-% reach equilibrium.
+which for segments meeting at angle $\theta$ evaluates to
+$L\sin(\theta/2) \approx L\theta/2$. Equating the hinge energy
+$U = \tfrac{1}{2}(EI/L)\theta^2$ to the XPBD form
+$U = \tfrac{1}{2}\alpha^{-1}C^2$ gives
 \begin{equation}
-\mathbf{F} = \tfrac{1}{2}\rho C_d A \lVert \mathbf{u}-\mathbf{v} \rVert
-             (\mathbf{u}-\mathbf{v})
+\alpha_\text{bend} = \frac{L^3}{4EI}, \qquad I = \frac{\pi r^4}{4}.
+\label{eq:compliance}
 \end{equation}
 
-\subsection{Solver}
-% XPBD; why compliance rather than iteration-count stiffness; the chain vs
-% colour parallelisation result; substeps beat iterations.
+We use the midpoint-offset form in \eqref{eq:bend} rather than the more common
+constraint on the distance $\lVert \mathbf{x}_c - \mathbf{x}_a \rVert$ between
+outer particles. That quantity is $2L\cos(\theta/2)$, which is
+\emph{quadratic} in $\theta$ near a straight configuration: its gradient
+vanishes exactly where an upright plant sits, so the constraint goes
+numerically inert on a standing stem and the plant behaves as a rope until it
+is already bent. The midpoint offset is linear in $\theta$ and remains well
+conditioned throughout.
+
+Because $I \propto r^4$, a modest taper produces a large stiffness gradient.
+The default stem tapers from \RadiusBase{}\,mm at the soil to \RadiusTip{}\,mm
+at the tip and is measured at \RigidityRatio{}$\times$ stiffer at the base
+once the lumped mass distribution is included (Fig.~\ref{fig:stiffness}). The
+frequently sought property that plant rigidity should fall with height is thus
+a consequence of modelling the taper, not a rule applied on top of the model.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../results/stiffness_profile.png}
+\caption{Tapered geometry and the resulting rigidity profile. Because
+$EI \propto r^4$, the modest radius taper on the left produces the
+order-of-magnitude stiffness falloff on the right.}
+\label{fig:stiffness}
+\end{figure}
+
+\subsection{The soil boundary condition}
+
+This is the single structural detail that determines whether the model
+produces a plant or a falling pole, and it is easy to get wrong.
+
+Pinning the root particle fixes the plant's \emph{position} but not its
+\emph{direction}. Every bending constraint remains satisfied while the entire
+stem rotates rigidly about that one point, so the plant topples regardless of
+how stiff the material is---a failure that presents as insufficient stiffness
+and cannot be fixed by increasing it. A real stem is \emph{clamped} by soil:
+position and tangent are both constrained. Fixing a tangent requires a second
+fixed reference, so the model buries an additional pinned anchor particle one
+segment below the root and hinges a bending constraint at the root between the
+anchor and the first free particle. This reproduces the built-in end condition
+of a cantilever and is what allows the stem to stand and bend as an arc.
+
+\subsection{Aerodynamic loading}
+
+Wind acts on each particle as drag,
+\begin{equation}
+\mathbf{F} = \tfrac{1}{2}\rho C_d A
+             \lVert \mathbf{u}-\mathbf{v} \rVert (\mathbf{u}-\mathbf{v}),
+\label{eq:drag}
+\end{equation}
+where $\mathbf{u}$ is the local air velocity and $\mathbf{v}$ the particle
+velocity. The dependence on the \emph{relative} velocity is essential and not
+a refinement. As the plant yields to the wind, $\lVert\mathbf{u}-\mathbf{v}\rVert$
+falls, the force falls with it, and the deflection settles where drag balances
+the elastic restoring force. Modelling wind as a constant acceleration removes
+that feedback entirely: the force never decreases as the plant gives way, and
+the stem is driven flat. No amount of damping repairs this, because the defect
+is in the force model rather than in the dissipation---a point worth stating
+because heavy damping is the natural first response to the symptom, and it
+suppresses the motion the simulation exists to produce.
+
+The wind field combines a power-law boundary layer with gust and buffeting
+terms,
+\begin{equation}
+\mathbf{u}(\mathbf{x},t) = \hat{\mathbf{d}}\,U
+  \left(\frac{y}{y_\text{ref}}\right)^{\!a}
+  \left[1 + g\sin(2\pi f_g t - \tfrac{3}{10}\phi)
+          + b\sin(2\pi f_t t - \phi)\right],
+\end{equation}
+with $\phi = k(x + 0.7z)$ providing spatial decorrelation so that plants at
+different positions along a row experience different instantaneous wind. The
+shear term makes wind stronger with height; combined with the $r^4$ stiffness
+taper, it is the second reason a stem bends as an arc rather than leaning
+uniformly, since the upper plant is simultaneously weaker and more heavily
+loaded.
+
+Tissue damping is applied as an exponential decay $\exp(-ch)$ per substep
+rather than as a per-frame multiplier. A constant factor per step makes the
+effective damping depend on the substep count, so the plant silently becomes a
+different material whenever solver settings change.
 
 \input{parameters}
 
+\subsection{Solver and parallelisation}
+\label{sec:solver}
+
+Each substep predicts positions under gravity, drag and damping, projects
+constraints, resolves ground and manipulator contact, and recovers velocities
+from the corrected positions. The XPBD projection for a constraint with
+compliance $\alpha$ is
+\begin{equation}
+\Delta\lambda = \frac{-C - \tilde{\alpha}\lambda}
+                     {\sum_i w_i \lVert\nabla_i C\rVert^2 + \tilde{\alpha}},
+\qquad \tilde{\alpha} = \frac{\alpha}{h^2},
+\end{equation}
+with $\Delta\mathbf{x}_i = w_i \nabla_i C \, \Delta\lambda$.
+
+The parallelisation strategy is where a stem differs from the cloth and
+particle systems for which GPU constraint solvers are usually designed. The
+conventional approach partitions constraints into conflict-free colour groups
+so that all constraints within a colour can be projected simultaneously. For a
+chain this converges poorly: a bending correction at the tip reaches the root
+only by propagating hinge by hinge, roughly one hinge per pass. We measured
+the consequence directly. On a uniform 17-node cantilever with an analytic tip
+deflection of $62.58$\,mm, the colour-parallel scheme at a typical budget of
+8~substeps and 2~iterations yields $307.53$\,mm, against $70.17$\,mm at
+convergence---a stem $4.4\times$ more compliant than the material specifies.
+The symptom is a plant that flops like a rope, which is indistinguishable from
+a modelling error and invites exactly the wrong fix.
+
+We therefore solve each plant's chain sequentially within a single thread,
+sweeping forward from root to tip and then backward. A symmetric sweep over a
+tridiagonal system propagates corrections end to end, so the chain is solved
+almost directly. Parallelism then derives from the number of plants, which is
+the appropriate axis for this workload: an agricultural scene contains
+hundreds or thousands of plants and only tens of particles each. Both schemes
+are implemented, and the test suite verifies that they agree when each is
+given sufficient budget.
+
 \section{Validation}
 
-\subsection{Closed-Form Beam Theory}
-% Mesh refinement table: 9/17/33 nodes, converged, vs qL^4/(8EI).
-% State the residual ~8% bias and its cause (elastic clamp, lumped mass).
+\subsection{Closed-form beam theory}
 
-\subsection{Independent Implementation}
-% Warp kernels vs NumPy reference agree to ~5e-5 m over 300 frames.
+A uniformly loaded cantilever has the exact small-deflection solution
+$\delta = qL^4/(8EI)$. To reproduce that case the plant is reduced to a
+uniform cylinder with no taper, no leaves and no wind, and gravity is directed
+transverse to the stem so that it loads the beam in bending rather than
+compression. The solver then runs until motion ceases.
 
-\subsection{Measured Plant Deflection}
-% FILL FROM results/field_validation.md once measurements exist.
-% If \FieldValidationDone is false this section cannot be written, and the
-% paper should not claim real-world validation.
-% n = \FieldN{}, species \FieldSpecies{}, mean absolute error \FieldMAE{} deg.
-%
-% State the limitations explicitly and in the body text, not only in a
-% limitations section: preliminary, small n, single species, and -- if the
-% fan was uncalibrated -- that the airspeed scale was fitted rather than
-% measured.
+\begin{table}[t]
+\caption{Mesh refinement against $qL^4/(8EI) = 62.58$\,mm. Each row is
+independently converged by doubling substeps until the result changes by less
+than 1\%.}
+\label{tab:refinement}
+\centering
+\begin{tabular}{rrrr}
+\toprule
+Nodes & Segments & Substeps & Tip deflection (mm) \\
+\midrule
+9  & 8  & 16 & 78.10 \quad ($+24.8\%$) \\
+17 & 16 & 64 & 70.30 \quad ($+12.3\%$) \\
+33 & 32 & \multicolumn{2}{l}{did not converge within budget} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:refinement} reports the result. The error decreases with
+resolution across the two converged rows, which is the behaviour that
+distinguishes a converging discretisation from a coincidence; a single
+agreeing number at a single setting would establish nothing. The residual
+positive bias has an identifiable cause: the soil clamp is an elastic hinge
+carrying the base segment's own compliance rather than a rigid encastre, and
+mass is lumped at nodes rather than distributed. Both make the discrete chain
+slightly more compliant than the continuum beam described by the closed form.
+
+We report the third row as not converged rather than quoting its value. The
+substeps required to converge grow steeply with node count---16, then 64---
+because a beam's constraint system is stiffer the more finely it is meshed,
+and at 33~nodes the requirement exceeded the budget we allowed. This is also
+the practical reason the default stem uses \StemNodes{} nodes rather than
+more: beyond a point, spatial resolution costs solver work without buying
+accuracy a robot can use.
+
+\subsection{Solver convergence}
+\label{sec:convergence}
+
+Table~\ref{tab:convergence} compares the two available knobs at matched cost.
+Both converge eventually, but not at the same price: 64~substeps with
+4~iterations reaches what 8~substeps with 128~iterations reaches, for a
+quarter of the work. This reproduces the substepping result
+of~\cite{macklin2019smallsteps} on an independent problem and sets our
+defaults of \Substeps{}~substeps and \Iterations{}~iterations.
+
+\begin{table}[t]
+\caption{Convergence on a uniform 17-node cantilever. Work is the product of
+substeps and iterations.}
+\label{tab:convergence}
+\centering
+\begin{tabular}{rrrr}
+\toprule
+Substeps & Iterations & Work & Tip deflection (mm) \\
+\midrule
+8   & 2   & 16   & 307.53 \\
+8   & 8   & 64   & 114.36 \\
+8   & 32  & 256  & 71.03 \\
+8   & 128 & 1024 & 69.17 \\
+16  & 4   & 64   & 85.49 \\
+32  & 4   & 128  & 70.48 \\
+64  & 4   & 256  & 70.31 \\
+128 & 4   & 512  & 70.17 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Independent implementation}
+
+The solver exists twice: as Warp kernels, and as a vectorised NumPy reference
+written separately against the same constraint formulation, compliances and
+substep schedule. After 120 frames of turbulent wind the two agree to a
+maximum particle difference of $4.88\times10^{-5}$\,m and a mean of
+$5.59\times10^{-6}$\,m, on a plant \StemLength{}\,m tall. Two independent
+implementations converging on the same trajectory is evidence the kernels are
+correct that a single implementation cannot provide.
+
+\subsection{Inextensibility}
+
+Real stems do not measurably stretch under wind or under the loads a robot
+applies. Measured stem arc length after 300 frames of loading differs from its
+rest length by $0.0024\%$, confirming the axial constraints hold.
 
 \section{Results}
 
-\subsection{Wind Response}
-The default plant reaches a mean tip deflection of
-\TipDeflectionMean{}\,m, peaking at \TipDeflectionPeak{}\,m
-(\TipDeflectionPercent{}\,\% of stem length) under a \WindSpeed{}\,m/s wind,
-while the stem tip remains at \TipHeight{}\,m.
+\subsection{Wind response}
 
-\subsection{Throughput}
-% ONLY write this subsection if \GPUAvailable is true. Otherwise the honest
-% move is to report CPU scaling and state that GPU evaluation is future work
-% -- a GPU claim without GPU numbers, in a field where
-% OrchardBench~\cite{munn2026orchardbench} reports measured GPU results, will
-% not survive review.
+Under a \WindSpeed{}\,m/s wind the default plant reaches a mean tip deflection
+of \TipDeflectionMean{}\,m, peaking at \TipDeflectionPeak{}\,m
+(\TipDeflectionPercent{}\,\% of stem length) as gusts pass, while the stem tip
+remains at \TipHeight{}\,m. Fig.~\ref{fig:bending} shows the characteristic
+behaviour: the lower third of the stem remains near-vertical while the tip
+sweeps through a large arc, and the plant sways rather than settling into a
+static lean. Neither property is imposed; both follow from the combination of
+the $r^4$ rigidity taper, the sheared wind profile, and drag acting on
+relative velocity.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{../results/stem_bending.png}
+\caption{A single plant through a gust cycle at \WindSpeed{}\,m/s. The base
+remains near-vertical while the tip sweeps a large arc, and the plant returns
+as the gust passes rather than settling into a static lean.}
+\label{fig:bending}
+\end{figure*}
+
+\subsection{Canopy behaviour}
+
+Fig.~\ref{fig:canopy} shows a 60-plant row under a single shared wind field.
+Plants do not move in lockstep: the field varies with height and with position
+along the row, and stem sizes vary by $\pm12\%$. That variation is the point.
+A perception model trained on a canopy in which every plant bends identically
+acquires the wrong prior about what a crop row looks like as a robot
+approaches it.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../results/canopy.png}
+\caption{Sixty plants under one shared turbulent wind field, side elevation
+and plan view. Spatial decorrelation of the field and $\pm12\%$ size variation
+prevent lockstep motion.}
+\label{fig:canopy}
+\end{figure}
+
+\subsection{Manipulator interaction}
+
+Fig.~\ref{fig:robot} shows a manipulator on a driving base passing through the
+canopy, with the plant deflecting and the contact reaction recorded. This is
+the output a rigid-body simulator cannot produce: not whether a collision
+occurred, but how hard the plant resisted. Against a static estimate
+$3EI\delta/h^3$ for the measured deflection, the simulated quasi-static
+contact force agrees to within a factor of two and in the expected
+direction---lower, because the small-deflection formula assumes a full-length
+moment arm at deflections where the stem has appreciably curved.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../results/scene_panels.png}
+\caption{A manipulator on a driving base passing through the canopy. Contact
+is resolved against the whole arm rather than the tool alone, since a real
+manipulator displaces plants with its forearm.}
+\label{fig:robot}
+\end{figure}
+
+\subsection{Computational performance}
+
+Table~\ref{tab:benchmark} reports scaling. We deliberately report two CPU
+baselines. Comparing a compiled solver against interpreted Python measures the
+language as much as the method; Warp compiles one source to both targets, so
+the NumPy-versus-Warp-CPU comparison isolates the implementation.
+
+\begin{table}[t]
+\caption{Frame cost, mean $\pm$ standard deviation over \BenchRepeats{}
+independent runs. Solver settings as in Table~\ref{tab:parameters}.}
+\label{tab:benchmark}
+\centering
+\begin{tabular}{rrrr}
+\toprule
+Plants & Particles & NumPy (ms) & Warp CPU (ms) \\
+\midrule
+1  & 25   & $282.14 \pm 5.72$ & $1.89 \pm 0.11$ \\
+16 & 400  & $309.56 \pm 7.52$ & $4.48 \pm 0.21$ \\
+64 & 1600 & $371.20 \pm 9.22$ & $13.19 \pm 0.24$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We do not report GPU timings. The solver is written as device-resident Warp
+kernels with the entire frame capturable as a CUDA graph, and it selects a
+CUDA device automatically when one is available, but no GPU was accessible on
+our development machine during this work. Reporting a speed-up we have not
+measured would be indefensible in a setting where comparable systems report
+measured GPU results~\cite{munn2026orchardbench}, and we therefore restrict
+our performance claims to the CPU figures above and identify GPU evaluation as
+immediate future work.
+
+\section{A Negative Result: Impact Metrics Do Not Converge}
+\label{sec:negative}
+
+We attempted to determine a maximum safe approach speed---the speed above
+which a manipulator damages the crop---and report here that we could not, in
+the belief that the reason is more useful than silence.
+
+Three candidate metrics were examined under temporal refinement. Peak contact
+force read from positional corrections grew from $2.4$ to $25$\,N across a
+$16\times$ refinement, scaling roughly as $1/h$; this estimator measures how
+far the solver displaced a particle, which is largely the solver undoing the
+elastic correction applied earlier in the same substep rather than a physical
+force. Reformulating contact as a proper XPBD constraint and recovering the
+force from its multiplier as $\lambda/h^2$, which is timestep-independent by
+construction at convergence, did not resolve it: with a near-rigid contact the
+multiplier re-encodes the same positional correction, and sweeping the contact
+compliance across five orders of magnitude left a $50$--$80\%$ spread. Peak
+bending stress $\sigma = E\kappa r$, computed from the deflected centreline so
+that no solver-reported force enters, converged at a fixed timestep and a
+single speed but not across speeds, since a fast pass resolves a
+correspondingly shorter contact event. Holding the spatial step constant and
+refining every data point individually, all points moved and several by more
+than $150\%$.
+
+The diagnosis is that the peak of a stiff impact on a lightly damped discrete
+elastic chain is not a converged quantity. The manipulator is kinematically
+driven, so contact is effectively an immovable object striking a compliant
+one, which excites high-frequency modes of the particle chain. The model's
+only dissipation is a global velocity damping acting nearly equally on all
+modes, so as the timestep shrinks, progressively higher modes are resolved and
+ring, and the peak curvature sharpens rather than settling. This is a
+modelling gap rather than a solver defect: the solver is being asked for a
+quantity the model does not define.
+
+The remedy is strain-rate-dependent damping in the constitutive model. Plant
+tissue is strongly viscoelastic and dissipates preferentially at high strain
+rate, which is precisely the mechanism absent here. We identify this as the
+primary avenue for future work. The qualitative claim is unaffected: contact
+forces and stresses rise monotonically with approach speed, and a deformable
+model yields contact information a rigid one cannot produce at all.
 
 \section{Limitations}
-% Say these plainly; a reviewer finding them first is much worse.
-% - material constants assumed from published ranges, not measured per plant
-% - drag model, not a flow solve: no wake, no plant-to-plant sheltering
-% - leaves are 1-D chains: no twist or furling
-% - purely elastic: no plastic deformation or stem breakage
-% - validation scope: preliminary, small n, single species
+
+We state these plainly, in the body text rather than only in a closing
+section.
+
+\textbf{No validation against measured plants.} Every check in this paper is
+against analytic beam theory or a second implementation of the same
+algorithm. Material constants are drawn from published ranges for green
+herbaceous tissue rather than measured from a specific crop. Matching a named
+species requires bending tests on real stems, which we have not performed.
+Accordingly we claim numerical correctness, not biological fidelity.
+
+\textbf{No GPU measurements}, as discussed in Section~\ref{sec:related} and
+above.
+
+\textbf{Aerodynamics are a drag model, not a flow solve.} There is no wake and
+no plant-to-plant sheltering; every plant sees the prescribed field. In a
+dense canopy, downwind plants would in reality be sheltered by upwind ones.
+
+\textbf{Leaves are one-dimensional chains.} They carry the correct order of
+drag area but cannot twist, furl, or flutter about their own axis---and
+reconfiguration of this kind is a significant part of how real foliage sheds
+aerodynamic load at high wind speed.
+
+\textbf{The model is purely elastic.} There is no plastic deformation and no
+breakage, so the simulation can report the load that would break a stem but
+not what follows.
+
+\textbf{Impact metrics do not converge}, as established in
+Section~\ref{sec:negative}.
 
 \section{Conclusion}
 
+We have presented a biomechanical model of slender herbaceous row crops under
+wind, intended for agricultural robot simulation, in which the plant's bending
+response follows from a tapered flexural rigidity profile rather than from
+tuned parameters. Wind is modelled as drag on relative velocity, which we show
+is necessary for the deflection to reach equilibrium at all. The model is
+validated against a closed-form cantilever solution and an independent
+implementation.
+
+Two findings generalise beyond this application. A pinned root is not a
+clamped root, and the distinction determines whether a simulated plant stands
+or topples irrespective of its stiffness. And chain topologies are poorly
+served by colour-parallel constraint solving, which at equal cost produced a
+stem $4.4\times$ more compliant than specified---a discrepancy that presents
+as a modelling error and is a convergence error.
+
+The immediate work is threefold: measured GPU throughput; validation against
+real plant deflection under known wind, for which the experimental protocol
+and analysis pipeline are prepared; and strain-rate-dependent damping, without
+which the impact-severity question posed in Section~\ref{sec:negative} cannot
+be answered.
+
 \section*{Acknowledgment}
-% Advisor, institution, compute.
+% ADVISOR: complete before submission. Acknowledge institutional support and
+% any compute resources used.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
