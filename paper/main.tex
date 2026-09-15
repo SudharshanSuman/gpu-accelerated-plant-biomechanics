@@ -21,8 +21,8 @@
 
 \begin{document}
 
-\title{Wind-Driven Biomechanics of Herbaceous\\
-Row Crops for Agricultural Robot Simulation}
+\title{GPU-Accelerated Plant Biomechanics Simulation\\
+for Agricultural Robots}
 
 \author{
 \IEEEauthorblockN{Sudharshan S}
@@ -72,9 +72,16 @@ negatively, peak impact quantities during manipulator contact do not converge
 under temporal refinement in a model without strain-rate damping, and we
 therefore decline to report a maximum safe approach speed.
 
-The model is validated against a closed-form cantilever solution and against
-an independent second implementation agreeing to
-$5\times10^{-5}$\,m. Validation against measured plants remains outstanding.
+The solver is GPU-resident, and we report measured throughput rather than an
+architectural claim: \BenchMaxPlants{} plants (\BenchMaxParticles{}
+particles) simulate at \BenchWarpCUDA{}\,ms per frame, \Speedup{}$\times$
+faster than the same kernels compiled for the CPU, with a 4096-plant canopy
+running at interactive rates. We also report where the GPU \emph{loses}:
+below roughly 64 plants, launch overhead dominates and the CPU path is
+faster. The model is validated against a closed-form cantilever solution and
+against an independent second implementation agreeing to
+$5\times10^{-5}$\,m. Validation against measured plants remains
+outstanding.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -130,6 +137,11 @@ require sequential constraint propagation. The colour-parallel scheme
 conventionally used for GPU constraint solving leaves a 17-node stem
 $4.4\times$ too compliant at the same computational budget, a discrepancy that
 presents as a modelling failure while being a convergence failure.
+
+\item A GPU-resident implementation whose throughput is measured rather than
+asserted, including the scene size below which GPU execution is
+counterproductive---a crossover rarely reported, and one that matters when
+the alternative costs a rewrite.
 
 \item Validation against a closed-form cantilever solution and an independent
 reimplementation, together with an explicit negative result: peak impact
@@ -489,35 +501,69 @@ manipulator displaces plants with its forearm.}
 
 \subsection{Computational performance}
 
-Table~\ref{tab:benchmark} reports scaling. We deliberately report two CPU
-baselines. Comparing a compiled solver against interpreted Python measures the
-language as much as the method; Warp compiles one source to both targets, so
-the NumPy-versus-Warp-CPU comparison isolates the implementation.
+Table~\ref{tab:benchmark} reports scaling across three backends on an RTX~4070.
+We deliberately include two CPU baselines. Comparing a compiled GPU solver
+against interpreted Python measures the language as much as the method; Warp
+compiles one source to both targets, so the Warp-CPU column isolates the
+device while the NumPy column shows what the implementation alone buys.
 
 \begin{table}[t]
 \caption{Frame cost, mean $\pm$ standard deviation over \BenchRepeats{}
-independent runs. Solver settings as in Table~\ref{tab:parameters}.}
+independent runs on an RTX~4070. Speed-up is Warp-CPU over Warp-CUDA, so it
+compares devices rather than languages. NumPy is omitted above 25{,}600
+particles, where a single frame exceeds one second.}
 \label{tab:benchmark}
 \centering
-\begin{tabular}{rrrr}
+\begin{tabular}{rrrrrr}
 \toprule
-Plants & Particles & NumPy (ms) & Warp CPU (ms) \\
+Plants & Particles & NumPy & Warp CPU & Warp CUDA & Speed-up \\
+       &           & (ms)  & (ms)     & (ms)      &          \\
 \midrule
-1  & 25   & $282.14 \pm 5.72$ & $1.89 \pm 0.11$ \\
-16 & 400  & $309.56 \pm 7.52$ & $4.48 \pm 0.21$ \\
-64 & 1600 & $371.20 \pm 9.22$ & $13.19 \pm 0.24$ \\
+1     & 25      & $247.7$  & $1.74$    & $4.95$   & $0.4\times$ \\
+16    & 400     & $269.3$  & $4.03$    & $5.26$   & $0.8\times$ \\
+64    & 1600    & $326.9$  & $11.22$   & $10.40$  & $1.1\times$ \\
+256   & 6400    & $576.1$  & $40.01$   & $27.73$  & $1.4\times$ \\
+1024  & 25600   & $1466.7$ & $156.29$  & $28.15$  & $5.6\times$ \\
+4096  & 102400  & ---      & $624.75$  & $30.54$  & $20.5\times$ \\
+16384 & 409600  & ---      & $2516.75$ & $116.04$ & $21.7\times$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-We do not report GPU timings. The solver is written as device-resident Warp
-kernels with the entire frame capturable as a CUDA graph, and it selects a
-CUDA device automatically when one is available, but no GPU was accessible on
-our development machine during this work. Reporting a speed-up we have not
-measured would be indefensible in a setting where comparable systems report
-measured GPU results~\cite{munn2026orchardbench}, and we therefore restrict
-our performance claims to the CPU figures above and identify GPU evaluation as
-immediate future work.
+The curve has three regimes, and reporting only the last of them would
+misrepresent the method.
+
+Below roughly 64~plants the GPU is \emph{slower} than the CPU. At a single
+plant the solver runs in $1.74$\,ms on the CPU and $4.95$\,ms on the GPU: a
+frame is a fixed sequence of kernel launches over a few dozen particles, and
+launch latency dominates arithmetic entirely. We report this because the
+alternative---quoting only the favourable end of the range---would leave a
+reader to discover the crossover themselves after committing to a port.
+
+Between roughly 256 and 4096~plants the GPU time is nearly flat: $27.73$\,ms
+at 6400~particles against $30.54$\,ms at 102{,}400, a $16\times$ increase in
+work for a $10\%$ increase in time. The device is latency-bound over this
+whole range, and the extra work is effectively free. This is the regime an
+agricultural scene actually occupies, and it is why a 4096-plant canopy
+sustains interactive rates while the CPU path needs $624$\,ms per frame.
+
+Only beyond 4096~plants does the GPU become throughput-bound and begin scaling
+linearly, reaching \BenchWarpCUDA{}\,ms at \BenchMaxParticles{}~particles for
+a \Speedup{}$\times$ advantage over the identical kernels on the CPU.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../results/benchmark.png}
+\caption{Frame cost and speed-up against scene size. The GPU curve is flat
+across two orders of magnitude of work before becoming throughput-bound, and
+is slower than the CPU below roughly 64~plants.}
+\label{fig:benchmark}
+\end{figure}
+
+Two caveats belong with these numbers. All timings are of the solver alone,
+excluding rendering and USD stage updates, which dominate once a canopy is
+visualised. And the GPU figures are single-precision throughput on one
+consumer card; we make no claim about scaling across devices.
 
 \section{A Negative Result: Impact Metrics Do Not Converge}
 \label{sec:negative}
@@ -572,9 +618,6 @@ herbaceous tissue rather than measured from a specific crop. Matching a named
 species requires bending tests on real stems, which we have not performed.
 Accordingly we claim numerical correctness, not biological fidelity.
 
-\textbf{No GPU measurements}, as discussed in Section~\ref{sec:related} and
-above.
-
 \textbf{Aerodynamics are a drag model, not a flow solve.} There is no wake and
 no plant-to-plant sheltering; every plant sees the prescribed field. In a
 dense canopy, downwind plants would in reality be sheltered by upwind ones.
@@ -608,11 +651,13 @@ served by colour-parallel constraint solving, which at equal cost produced a
 stem $4.4\times$ more compliant than specified---a discrepancy that presents
 as a modelling error and is a convergence error.
 
-The immediate work is threefold: measured GPU throughput; validation against
-real plant deflection under known wind, for which the experimental protocol
-and analysis pipeline are prepared; and strain-rate-dependent damping, without
-which the impact-severity question posed in Section~\ref{sec:negative} cannot
-be answered.
+Two items of immediate work remain. Validation against real plant deflection
+under known wind, for which the experimental protocol and analysis pipeline
+are prepared but no measurements have yet been taken; and
+strain-rate-dependent damping, without which the impact-severity question
+posed in Section~\ref{sec:negative} cannot be answered. The latter is the
+more interesting of the two, since it converts a quantity the model currently
+cannot define into one a planner could act on.
 
 \section*{Acknowledgment}
 % ADVISOR: complete before submission. Acknowledge institutional support and

@@ -22,3 +22,7 @@ paper/*.fls
 
 # OS
 .DS_Store
+
+# docx build deps
+paper/docx/node_modules/
+paper/docx/package-lock.json

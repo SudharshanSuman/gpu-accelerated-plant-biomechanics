@@ -1,0 +1,7 @@
+{
+  "name": "plantsim-paper-docx",
+  "private": true,
+  "description": "Builds an IEEE-format Word rendering of the manuscript. The LaTeX build is authoritative; this exists for venues and collaborators that want Word.",
+  "scripts": { "build": "node content.js" },
+  "dependencies": { "docx": "^9.0.0" }
+}
