@@ -26,3 +26,6 @@ paper/*.fls
 # docx build deps
 paper/docx/node_modules/
 paper/docx/package-lock.json
+
+# Rendered frames are regenerable build output; the assembled GIF is kept.
+results/render/
