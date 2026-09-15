@@ -101,7 +101,7 @@ const authorCell = (name, email) => new TableCell({
 
 const front = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 },
-    children: [new TextRun({ text: 'GPU-Accelerated Plant Biomechanics Simulation for Agricultural Robots', font: FONT, size: 48 })] }),
+    children: [new TextRun({ text: 'GPU-Accelerated Biomechanics of Herbaceous Row Crops for Agricultural Robot Simulation', font: FONT, size: 44 })] }),
   new Table({ columnWidths: [half, half], width: { size: half * 2, type: WidthType.DXA },
     rows: [new TableRow({ children: [
       authorCell('Sudharshan S', 'sudharshans@karunya.edu.in'),

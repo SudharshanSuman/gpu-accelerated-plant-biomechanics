@@ -174,7 +174,7 @@ rest.push(sectionStar('References'));
 const props = (cols, type) => ({ page: { size: PAGE, margin: MARGIN },
   column: cols === 2 ? twoCol : { count: 1 }, type });
 const doc = new Document({
-  creator: 'Sudharshan S', title: 'GPU-Accelerated Plant Biomechanics Simulation for Agricultural Robots',
+  creator: 'Sudharshan S', title: 'GPU-Accelerated Biomechanics of Herbaceous Row Crops for Agricultural Robot Simulation',
   styles: { default: { document: { run: { font: FONT, size: BODY } } } },
   sections: [
     { properties: props(1), children: front },
