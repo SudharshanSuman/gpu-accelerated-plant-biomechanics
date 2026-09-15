@@ -138,10 +138,10 @@ conventionally used for GPU constraint solving leaves a 17-node stem
 $4.4\times$ too compliant at the same computational budget, a discrepancy that
 presents as a modelling failure while being a convergence failure.
 
-\item A GPU-resident implementation whose throughput is measured rather than
-asserted, including the scene size below which GPU execution is
-counterproductive---a crossover rarely reported, and one that matters when
-the alternative costs a rewrite.
+\item A GPU-resident implementation, integrated into a production robotics
+simulator, whose throughput is measured rather than asserted---including the
+scene size below which GPU execution is counterproductive, a crossover rarely
+reported and one that matters when the alternative costs a rewrite.
 
 \item Validation against a closed-form cantilever solution and an independent
 reimplementation, together with an explicit negative result: peak impact
@@ -161,13 +161,15 @@ deformable plants is tractable inside a standard robotics simulator, and any
 claim that simulators universally treat plants as rigid must be qualified
 against it.
 
-Munn~\cite{munn2026orchardbench} presents OrchardBench, a GPU-parallel apple
-orchard benchmark in which branches are compliant torsional spring-dampers
-with stiffness taken from Euler--Bernoulli beam theory, branches break at a
-wood modulus of rupture, and fruit detaches at literature-grounded pull
-forces. It is the closest prior art to the present work, overlapping it on
-GPU parallelism, beam-theory stiffness, robot contact, and the practice of
-grounding every physical parameter in a published source.
+Munn~\cite{munn2026orchardbench} presents OrchardBench, a benchmark for apple
+orchards that runs many environments concurrently on a single GPU. Limb
+flexibility there is captured by torsional spring-dampers whose coefficients
+are derived analytically rather than fitted, with failure thresholds and
+fruit-detachment forces alike traced back to published measurements for the
+relevant tissue. It is the closest prior art to the present work, since it
+coincides with our approach on four axes at once: GPU parallelism, stiffness
+obtained from beam theory, interaction with a manipulator, and a refusal to
+introduce physical constants that cannot be sourced.
 
 We therefore state our separation from these works precisely rather than
 broadly. Both address woody structures under manipulator contact. This work
@@ -346,6 +348,61 @@ the appropriate axis for this workload: an agricultural scene contains
 hundreds or thousands of plants and only tens of particles each. Both schemes
 are implemented, and the test suite verifies that they agree when each is
 given sufficient budget.
+
+\section{Implementation}
+\label{sec:impl}
+
+\subsection{GPU residency}
+
+A frame is a fixed sequence of kernel launches over device-resident arrays.
+Nothing is copied to the host inside the loop; the only transfers are those a
+caller explicitly requests, such as reading positions for rendering. This
+distinction separates a GPU solver from a solver that merely contains GPU
+kernels: copying state to the host and back each frame---a natural first
+implementation---makes the simulation bound by transfer bandwidth rather than
+arithmetic, and it loses to a competent CPU implementation at every problem
+size.
+
+Simulation time is held in a device array rather than passed as a kernel
+argument. That detail exists so the entire frame can be captured once as a
+CUDA graph and replayed, which matters at the small end of
+Table~\ref{tab:benchmark}: with tens of particles the per-launch overhead of
+roughly fifty kernels dominates the arithmetic entirely.
+
+\subsection{Integration with a robotics simulator}
+
+The solver is exposed to NVIDIA Isaac Sim through a bridge object that
+authors the canopy into the USD stage and registers itself as a physics-step
+callback. Adding a simulated crop to an existing scene requires constructing
+the bridge, building, and attaching it.
+
+Each plant is written as one \texttt{BasisCurves} primitive for the stem plus
+one per leaf, with per-vertex widths so that the rendered stem tapers exactly
+as the physics does. The alternative---one primitive per particle---is
+untenable at canopy scale: five hundred plants is $12\,500$ particles, and
+stage traversal rather than physics would set the frame time.
+
+PhysX is not involved in the plant dynamics. Isaac Sim serves as renderer and
+robot host while the biomechanics are computed by the solver described above,
+because a rigid-body engine has no representation for a tapered anisotropic
+stem. Positions are pushed to USD once per frame after the solver has run, so
+what is drawn is what was solved.
+
+\subsection{Manipulator contact}
+
+The manipulator is represented to the solver as a set of collision spheres.
+Sampling an arm into several spheres rather than tracking only the tool is
+deliberate: a real manipulator displaces a canopy with its forearm, and the
+load that matters is the sum over everything in contact. Sphere spacing is
+derived from link geometry rather than fixed, since proxies that do not
+overlap allow a stem to pass between two spheres and register no contact at
+all.
+
+Contact is resolved as an XPBD constraint with a one-sided multiplier, so
+that it can push a particle out of a sphere but never pull one in. The choice
+of a constraint formulation over a direct positional push is examined in
+Section~\ref{sec:negative}, where it is shown to be necessary but not
+sufficient for recovering a meaningful contact force.
 
 \section{Validation}
 
@@ -659,9 +716,34 @@ posed in Section~\ref{sec:negative} cannot be answered. The latter is the
 more interesting of the two, since it converts a quantity the model currently
 cannot define into one a planner could act on.
 
+\section*{Reproducibility}
+
+Every numerical result in this paper is produced by a script in the released
+repository, and the parameter table and result values in the manuscript are
+generated from the code rather than transcribed. Values that have not been
+measured are rendered as explicit placeholders rather than filled with
+estimates. The validation, convergence and benchmark experiments in
+Sections~\ref{sec:impl}--\ref{sec:negative} are each reproduced by a single
+command.
+
 \section*{Acknowledgment}
-% ADVISOR: complete before submission. Acknowledge institutional support and
-% any compute resources used.
+
+% ADVISOR: confirm institutional support and compute resources before
+% submission.
+%
+% The paragraph below is required by IEEE policy, which mandates that
+% AI-assisted content be disclosed in the acknowledgments, identifying the
+% system and the sections involved. Editing and grammar assistance is exempt;
+% drafting and code generation are not. Do not remove it.
+
+Portions of this manuscript and of the accompanying software were prepared
+with the assistance of Claude (Anthropic). The system was used for drafting
+prose throughout the manuscript, for implementing components of the
+simulation code and the analysis and plotting scripts, and for producing the
+figures from simulation output. All numerical results reported here were
+generated by executing the released code. The authors verified the
+derivations, the experimental results, and every citation, and are
+responsible for the content of this paper.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
