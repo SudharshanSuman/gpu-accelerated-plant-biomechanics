@@ -18,7 +18,7 @@ paper/*.blg
 paper/*.synctex.gz
 paper/*.fdb_latexmk
 paper/*.fls
-paper/main.pdf
+# paper/main.pdf is committed: it is the submission artifact, not a throwaway build product
 
 # OS
 .DS_Store
